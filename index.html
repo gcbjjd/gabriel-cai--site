@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STREET BRAWL: SPECIAL MOVES & ADVANCED PHYSICS</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Teko:wght@500;700&display=swap" rel="stylesheet">
+  
+  <!-- PeerJS for WebRTC Online Multiplayer -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  
+  <!-- Tone.js for Procedural Fighting Sound Effects -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #030305;
+      color: #ffffff;
+      font-family: 'Orbitron', sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .font-teko { font-family: 'Teko', sans-serif; }
+
+    #game-container {
+      position: relative;
+      width: 1000px;
+      height: 550px;
+      box-shadow: 0 0 60px rgba(0, 0, 0, 0.95), 0 0 35px rgba(239, 68, 68, 0.35);
+    }
+
+    .glow-red { text-shadow: 0 0 12px #ef4444, 0 0 24px #ef4444; }
+    .glow-blue { text-shadow: 0 0 12px #3b82f6, 0 0 24px #3b82f6; }
+    .glow-yellow { text-shadow: 0 0 12px #eab308, 0 0 24px #eab308; }
+
+    .btn-action {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.35), rgba(15, 23, 42, 0.95));
+      border: 2px solid #ef4444;
+      transition: all 0.2s ease;
+      clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+      cursor: pointer;
+    }
+
+    .btn-action:hover {
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 1));
+      box-shadow: 0 0 30px rgba(239, 68, 68, 0.8);
+      transform: translateY(-2px);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.35), rgba(15, 23, 42, 0.95));
+      border: 2px solid #3b82f6;
+      transition: all 0.2s ease;
+      clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+      cursor: pointer;
+    }
+
+    .btn-secondary:hover {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.95), rgba(37, 99, 235, 1));
+      box-shadow: 0 0 30px rgba(59, 130, 246, 0.8);
+      transform: translateY(-2px);
+    }
+
+    .bar-bg {
+      background: rgba(10, 15, 26, 0.9);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      transform: skew(-15deg);
+    }
+
+    .bar-fill {
+      transition: width 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .modal-blur {
+      backdrop-filter: blur(12px);
+      background: rgba(3, 3, 8, 0.9);
+    }
+
+    .counter-flash {
+      animation: counterAnim 0.6s ease-out forwards;
+    }
+
+    @keyframes counterAnim {
+      0% { opacity: 1; transform: scale(1.5) translateY(0); }
+      100% { opacity: 0; transform: scale(1) translateY(-35px); }
+    }
+  </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen">
+
+  <div id="game-container" class="rounded-lg overflow-hidden border border-gray-800 bg-black flex flex-col justify-center items-center">
+
+    <!-- HUD Overlay -->
+    <div id="hud" class="absolute top-0 left-0 w-full p-4 flex justify-between items-start pointer-events-none z-10 hidden">
+      <!-- Player 1 Status -->
+      <div class="w-5/12">
+        <div class="flex justify-between items-center mb-1">
+          <span id="p1-label" class="font-teko text-2xl tracking-wider text-red-500 font-bold glow-red">P1: RYU</span>
+          <span id="p1-combo" class="font-teko text-3xl text-yellow-400 opacity-0 transition-opacity font-extrabold">2 HITS!</span>
+        </div>
+        <!-- Health Bar -->
+        <div class="bar-bg h-6 w-full p-0.5 relative overflow-hidden mb-1">
+          <div id="p1-health" class="bar-fill h-full bg-gradient-to-r from-red-600 via-amber-500 to-green-500 w-full"></div>
+        </div>
+        <!-- EX Super Meter Bar -->
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] text-amber-400 font-bold tracking-widest">EX SPECIAL</span>
+          <div class="bar-bg h-3 w-full p-0.5 relative overflow-hidden">
+            <div id="p1-super" class="bar-fill h-full bg-gradient-to-r from-amber-500 to-yellow-300 w-0"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Timer & Net Badge -->
+      <div class="flex flex-col items-center -mt-2">
+        <div class="bar-bg px-4 py-1 border-red-500/50">
+          <span id="game-timer" class="font-teko text-5xl font-black text-white glow-yellow">99</span>
+        </div>
+        <span id="network-badge" class="text-[10px] text-emerald-400 mt-1 uppercase tracking-widest font-semibold bg-gray-900/80 px-2 py-0.5 rounded border border-emerald-500/30">OFFLINE LOCAL</span>
+      </div>
+
+      <!-- Player 2 Status -->
+      <div class="w-5/12">
+        <div class="flex justify-between items-center mb-1 flex-row-reverse">
+          <span id="p2-label" class="font-teko text-2xl tracking-wider text-blue-500 font-bold glow-blue">P2: KEN</span>
+          <span id="p2-combo" class="font-teko text-3xl text-yellow-400 opacity-0 transition-opacity font-extrabold">2 HITS!</span>
+        </div>
+        <!-- Health Bar -->
+        <div class="bar-bg h-6 w-full p-0.5 relative overflow-hidden flex justify-end mb-1">
+          <div id="p2-health" class="bar-fill h-full bg-gradient-to-l from-blue-600 via-cyan-400 to-emerald-400 w-full"></div>
+        </div>
+        <!-- EX Super Meter Bar -->
+        <div class="flex items-center gap-2 flex-row-reverse">
+          <span class="text-[10px] text-amber-400 font-bold tracking-widest">EX SPECIAL</span>
+          <div class="bar-bg h-3 w-full p-0.5 relative overflow-hidden flex justify-end">
+            <div id="p2-super" class="bar-fill h-full bg-gradient-to-l from-amber-500 to-yellow-300 w-0"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Special Move / Counter Notice -->
+    <div id="counter-notice" class="absolute top-1/4 left-1/2 -translate-x-1/2 font-teko text-5xl font-black text-yellow-400 glow-yellow pointer-events-none z-20 hidden tracking-widest">
+      HADOKEN!
+    </div>
+
+    <!-- Main Game Canvas -->
+    <canvas id="gameCanvas" width="1000" height="550" class="block"></canvas>
+
+    <!-- MENU 1: MAIN MENU -->
+    <div id="menu-main" class="absolute inset-0 modal-blur flex flex-col items-center justify-center z-20">
+      <div class="text-center mb-6">
+        <h1 class="font-teko text-8xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-b from-red-500 via-orange-500 to-yellow-500 glow-red">
+          STREET BRAWL
+        </h1>
+        <p class="text-lg text-gray-300 tracking-widest uppercase font-semibold -mt-4">SPECIAL MOVES, FACIAL EXPRESSIONS & JUGGLE PHYSICS</p>
+      </div>
+
+      <div class="flex flex-col gap-3 w-80">
+        <button id="btn-local" class="btn-action py-3 text-xl font-bold tracking-wider text-white">LUTA LOCAL (1v1)</button>
+        <button id="btn-online-menu" class="btn-secondary py-3 text-xl font-bold tracking-wider text-white">JOGAR ONLINE COM AMIGO</button>
+        <button id="btn-controls" class="btn-secondary py-3 text-xl font-bold tracking-wider text-white border-gray-600">LISTA DE GOLPES ESPECIAIS</button>
+      </div>
+
+      <p class="absolute bottom-4 text-xs text-gray-400">Pressione <span class="text-yellow-400 font-bold">ESC</span> durante a luta para pausar.</p>
+    </div>
+
+    <!-- MENU 2: ONLINE MULTIPLAYER LOBBY -->
+    <div id="menu-online" class="absolute inset-0 modal-blur flex flex-col items-center justify-center z-30 hidden">
+      <h2 class="font-teko text-6xl font-bold text-blue-400 mb-2 glow-blue">MULTIJOGADOR ONLINE (P2P)</h2>
+      <p class="text-gray-300 text-sm mb-6 max-w-md text-center">Jogue com seu amigo em qualquer lugar! Crie uma sala ou digite o código da sala dele.</p>
+
+      <div class="grid grid-cols-2 gap-6 w-4/5 max-w-2xl mb-6">
+        <!-- Host Room -->
+        <div class="bg-gray-900/90 border border-blue-500/40 p-5 rounded-lg flex flex-col items-center text-center">
+          <h3 class="font-teko text-3xl text-blue-400 font-bold mb-1">CRIAR SALA</h3>
+          <p class="text-xs text-gray-400 mb-4">Gere um código e envie para o seu amigo.</p>
+          
+          <button id="btn-host-create" class="btn-secondary py-2 px-6 font-bold text-white mb-3">GERAR CÓDIGO DA SALA</button>
+
+          <div id="host-code-box" class="hidden flex flex-col items-center w-full">
+            <span class="text-xs text-gray-400">SEU CÓDIGO DA SALA:</span>
+            <span id="display-room-code" class="font-teko text-4xl font-extrabold text-yellow-400 glow-yellow my-1 tracking-widest">---</span>
+            <p id="host-status" class="text-xs text-blue-300 animate-pulse">Aguardando amigo se conectar...</p>
+          </div>
+        </div>
+
+        <!-- Join Room -->
+        <div class="bg-gray-900/90 border border-red-500/40 p-5 rounded-lg flex flex-col items-center text-center">
+          <h3 class="font-teko text-3xl text-red-400 font-bold mb-1">ENTRAR EM SALA</h3>
+          <p class="text-xs text-gray-400 mb-4">Digite o código recebido do seu amigo.</p>
+
+          <input id="input-room-code" type="text" placeholder="EX: 4829" maxlength="6" class="w-full text-center bg-black border-2 border-red-500/60 text-yellow-400 font-teko text-3xl font-bold tracking-widest rounded py-1 mb-3 uppercase focus:outline-none focus:border-red-400">
+
+          <button id="btn-join-room" class="btn-action py-2 px-6 font-bold text-white">CONECTAR E JOGAR</button>
+          <p id="join-status" class="text-xs text-red-400 mt-2 h-4"></p>
+        </div>
+      </div>
+
+      <button id="btn-back-online" class="btn-secondary px-8 py-2 text-lg font-bold text-white">VOLTAR AO MENU</button>
+    </div>
+
+    <!-- MENU 3: MOVE LIST & CONTROLS -->
+    <div id="menu-controls" class="absolute inset-0 modal-blur flex flex-col items-center justify-center z-30 hidden">
+      <h2 class="font-teko text-5xl font-bold text-red-500 mb-3 glow-red">LISTA DE GOLPES ESPECIAIS</h2>
+      
+      <div class="grid grid-cols-2 gap-6 mb-6 w-11/12 max-w-3xl">
+        <!-- Special Moves P1 -->
+        <div class="bg-gray-900/90 border border-yellow-500/40 p-4 rounded-lg">
+          <h3 class="text-lg text-yellow-400 font-bold border-b border-yellow-500/30 pb-1 mb-2">GOLPES ESPECIAIS (P1 / MOUSE & TECLAS)</h3>
+          <ul class="text-xs space-y-2 text-gray-200">
+            <li><span class="text-cyan-400 font-bold bg-gray-800 px-2 py-0.5 rounded border border-cyan-500/40">TECLA Q</span> - Hadoken (Projétil de Energia)</li>
+            <li><span class="text-orange-400 font-bold bg-gray-800 px-2 py-0.5 rounded border border-orange-500/40">TECLA E</span> - Shoryuken (Gancho Flamejante)</li>
+            <li><span class="text-emerald-400 font-bold bg-gray-800 px-2 py-0.5 rounded border border-emerald-500/40">TECLA R</span> - Tatsumaki (Furacão de Chutes)</li>
+            <li><span class="text-amber-400 font-bold bg-gray-800 px-2 py-0.5 rounded border border-amber-500/40">TECLA F / SHIFT + CLIQUE</span> - EX Ultra Super Combo</li>
+            <li><span class="text-yellow-400 font-bold bg-gray-800 px-2 py-0.5 rounded">CLIQUE ESQ / DIR</span> - Soco Jab / Gancho Heavy</li>
+            <li><span class="text-white font-bold bg-gray-800 px-2 py-0.5 rounded">W A S D</span> - Mover / Pular / Agachar & Defender</li>
+          </ul>
+        </div>
+
+        <!-- Player 2 Commands Local -->
+        <div class="bg-gray-900/90 border border-blue-500/40 p-4 rounded-lg">
+          <h3 class="text-lg text-blue-400 font-bold border-b border-blue-500/30 pb-1 mb-2">JOGADOR 2 (MODO LOCAL)</h3>
+          <ul class="text-xs space-y-2 text-gray-200">
+            <li><span class="text-cyan-400 font-bold bg-gray-800 px-2 py-0.5 rounded border border-cyan-500/40">TECLA U / NUM 1</span> - Hadoken (Projétil)</li>
+            <li><span class="text-orange-400 font-bold bg-gray-800 px-2 py-0.5 rounded border border-orange-500/40">TECLA I / NUM 2</span> - Shoryuken (Gancho Flamejante)</li>
+            <li><span class="text-emerald-400 font-bold bg-gray-800 px-2 py-0.5 rounded border border-emerald-500/40">TECLA O / NUM 3</span> - Tatsumaki (Furacão)</li>
+            <li><span class="text-amber-400 font-bold bg-gray-800 px-2 py-0.5 rounded border border-amber-500/40">TECLA P / NUM 4</span> - EX Ultra Super Combo</li>
+            <li><span class="text-white font-bold bg-gray-800 px-2 py-0.5 rounded">TECLAS L, K, J</span> - Soco Jab, Heavy & Chute</li>
+            <li><span class="text-white font-bold bg-gray-800 px-2 py-0.5 rounded">SETAS ◄ ▲ ► ▼</span> - Mover / Pular / Defender</li>
+          </ul>
+        </div>
+      </div>
+
+      <button id="btn-back-controls" class="btn-action px-8 py-2 text-lg font-bold text-white">VOLTAR</button>
+    </div>
+
+    <!-- MENU 4: PAUSE MENU -->
+    <div id="menu-pause" class="absolute inset-0 modal-blur flex flex-col items-center justify-center z-40 hidden">
+      <h2 class="font-teko text-6xl font-bold text-yellow-400 mb-6 glow-yellow">JOGO PAUSADO</h2>
+      <div class="flex flex-col gap-4 w-64">
+        <button id="btn-resume" class="btn-action py-3 text-lg font-bold text-white">CONTINUAR</button>
+        <button id="btn-restart-pause" class="btn-action py-3 text-lg font-bold text-white">REINICIAR LUTA</button>
+        <button id="btn-main-pause" class="btn-secondary py-3 text-lg font-bold text-white">MENU PRINCIPAL</button>
+      </div>
+    </div>
+
+    <!-- MENU 5: GAME OVER -->
+    <div id="menu-gameover" class="absolute inset-0 modal-blur flex flex-col items-center justify-center z-50 hidden">
+      <h2 id="winner-title" class="font-teko text-7xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-yellow-500">
+        JOGADOR 1 VENCEU!
+      </h2>
+      <p id="winner-subtitle" class="text-xl text-gray-300 font-semibold mb-8 uppercase tracking-widest">K.O. DEVASTADOR!</p>
+      
+      <div class="flex gap-4">
+        <button id="btn-restart-over" class="btn-action px-8 py-3 text-xl font-bold text-white">JOGAR NOVAMENTE</button>
+        <button id="btn-main-over" class="btn-secondary px-8 py-3 text-xl font-bold text-white">MENU PRINCIPAL</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let audioStarted = false;
+    const punchSynth = new Tone.MembraneSynth({
+      pitchDecay: 0.04,
+      octaves: 5,
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.001, decay: 0.22, sustain: 0, release: 0.1 }
+    }).toDestination();
+
+    const heavySynth = new Tone.MetalSynth({
+      frequency: 220,
+      envelope: { attack: 0.001, decay: 0.35, release: 0.1 },
+      harmonicity: 3.5,
+      modulationIndex: 20,
+      resonance: 1800,
+      octaves: 2
+    }).toDestination();
+    heavySynth.volume.value = -10;
+
+    const swooshSynth = new Tone.NoiseSynth({
+      noise: { type: "pink" },
+      envelope: { attack: 0.005, decay: 0.15, sustain: 0 }
+    }).toDestination();
+    swooshSynth.volume.value = -12;
+
+    const fireballSynth = new Tone.Synth({
+      oscillator: { type: "sawtooth" },
+      envelope: { attack: 0.02, decay: 0.2, sustain: 0.1, release: 0.3 }
+    }).toDestination();
+    fireballSynth.volume.value = -8;
+
+    const blockSynth = new Tone.NoiseSynth({
+      noise: { type: "white" },
+      envelope: { attack: 0.002, decay: 0.08, sustain: 0 }
+    }).toDestination();
+
+    function initAudio() {
+      if (!audioStarted) {
+        Tone.start();
+        audioStarted = true;
+      }
+    }
+
+    function playSound(type) {
+      if (!audioStarted) return;
+      try {
+        if (type === 'JAB') {
+          swooshSynth.triggerAttackRelease("16n");
+          punchSynth.triggerAttackRelease("C2", "16n");
+        } else if (type === 'HEAVY') {
+          swooshSynth.triggerAttackRelease("8n");
+          heavySynth.triggerAttackRelease("16n");
+          punchSynth.triggerAttackRelease("G1", "8n");
+        } else if (type === 'HADOKEN') {
+          fireballSynth.triggerAttackRelease("E3", "8n");
+        } else if (type === 'SHORYUKEN') {
+          heavySynth.triggerAttackRelease("8n");
+          punchSynth.triggerAttackRelease("C1", "4n");
+        } else if (type === 'TATSUMAKI') {
+          swooshSynth.triggerAttackRelease("4n");
+          punchSynth.triggerAttackRelease("F2", "8n");
+        } else if (type === 'KICK' || type === 'SWEEP') {
+          swooshSynth.triggerAttackRelease("8n");
+          punchSynth.triggerAttackRelease("E2", "8n");
+        } else if (type === 'EX') {
+          heavySynth.triggerAttackRelease("8n");
+          fireballSynth.triggerAttackRelease("C4", "4n");
+          punchSynth.triggerAttackRelease("C1", "4n");
+        } else if (type === 'BLOCK') {
+          blockSynth.triggerAttackRelease("16n");
+        }
+      } catch (e) { console.log(e); }
+    }
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+    // DOM Elements
+    const hud = document.getElementById('hud');
+    const menuMain = document.getElementById('menu-main');
+    const menuOnline = document.getElementById('menu-online');
+    const menuControls = document.getElementById('menu-controls');
+    const menuPause = document.getElementById('menu-pause');
+    const menuGameOver = document.getElementById('menu-gameover');
+    
+    const p1HealthBar = document.getElementById('p1-health');
+    const p2HealthBar = document.getElementById('p2-health');
+    const p1SuperBar = document.getElementById('p1-super');
+    const p2SuperBar = document.getElementById('p2-super');
+    const p1ComboText = document.getElementById('p1-combo');
+    const p2ComboText = document.getElementById('p2-combo');
+    const p1Label = document.getElementById('p1-label');
+    const p2Label = document.getElementById('p2-label');
+    const networkBadge = document.getElementById('network-badge');
+    const gameTimerEl = document.getElementById('game-timer');
+    const winnerTitle = document.getElementById('winner-title');
+    const counterNotice = document.getElementById('counter-notice');
+
+    // Engine Constants
+    const GRAVITY = 0.8;
+    const CANVAS_WIDTH = 1000;
+    const CANVAS_HEIGHT = 550;
+    const GROUND_Y = 460;
+
+    let gameState = 'MENU';
+    let isOnline = false;
+    let isHost = false;
+    let peer = null;
+    let peerConn = null;
+
+    let timer = 99;
+    let timerInterval = null;
+    let cameraShake = 0;
+    let hitFreezeFrames = 0;
+    let slowMoFactor = 1.0;
+    let speedLinesAlpha = 0;
+
+    // Particles, Projectiles & Special Move VFX Arrays
+    let particles = [];
+    let motionArcs = [];
+    let rainParticles = [];
+    let dustClouds = [];
+    let projectiles = [];
+
+    class RainDrop {
+      constructor() { this.reset(); }
+      reset() {
+        this.x = Math.random() * CANVAS_WIDTH;
+        this.y = Math.random() * -100;
+        this.speed = 15 + Math.random() * 8;
+        this.length = 20 + Math.random() * 12;
+        this.opacity = 0.2 + Math.random() * 0.4;
+      }
+      update() {
+        this.y += this.speed * slowMoFactor;
+        this.x -= 2 * slowMoFactor;
+        if (this.y > CANVAS_HEIGHT) this.reset();
+      }
+      draw() {
+        ctx.strokeStyle = `rgba(180, 220, 255, ${this.opacity})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y);
+        ctx.lineTo(this.x - 3, this.y + this.length);
+        ctx.stroke();
+      }
+    }
+
+    for (let i = 0; i < 90; i++) rainParticles.push(new RainDrop());
+
+    class Projectile {
+      constructor(x, y, dir, owner) {
+        this.x = x;
+        this.y = y;
+        this.vx = dir * 12;
+        this.radius = 24;
+        this.owner = owner;
+        this.color = owner.color === '#ef4444' ? '#06b6d4' : '#38bdf8';
+        this.active = true;
+        this.life = 120;
+      }
+
+      update(opponent) {
+        this.x += this.vx * slowMoFactor;
+        this.life -= slowMoFactor;
+        if (this.life <= 0 || this.x < -50 || this.x > CANVAS_WIDTH + 50) this.active = false;
+
+        // Hadoken Trail Particles
+        for (let i = 0; i < 2; i++) {
+          particles.push(new ImpactParticle(
+            this.x + (Math.random() - 0.5) * 20,
+            this.y + (Math.random() - 0.5) * 20,
+            this.color
+          ));
+        }
+
+        // Projectile Collision Check
+        const dist = Math.hypot(this.x - (opponent.position.x + opponent.width / 2), this.y - (opponent.position.y + opponent.height / 2));
+        if (dist < this.radius + 35 && this.active) {
+          this.active = false;
+          opponent.takeDamage(16, true, opponent.isAttacking);
+          this.owner.registerHit();
+          createHitImpact(this.x, this.y, true, this.color);
+          playSound('HEAVY');
+        }
+      }
+
+      draw() {
+        ctx.save();
+        ctx.shadowBlur = 30;
+        ctx.shadowColor = this.color;
+        
+        // Outer Energy Glow
+        const grad = ctx.createRadialGradient(this.x, this.y, 4, this.x, this.y, this.radius);
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(0.4, this.color);
+        grad.addColorStop(1, 'transparent');
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    function drawArena() {
+      // Sky & Neon Gradient
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+      skyGrad.addColorStop(0, '#040208');
+      skyGrad.addColorStop(0.6, '#0b0816');
+      skyGrad.addColorStop(1, '#151026');
+      ctx.fillStyle = skyGrad;
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+      // City Background Silhouettes
+      ctx.fillStyle = '#06040b';
+      ctx.fillRect(30, 150, 160, 310);
+      ctx.fillRect(200, 100, 190, 360);
+      ctx.fillRect(410, 180, 180, 280);
+      ctx.fillRect(600, 120, 170, 340);
+      ctx.fillRect(780, 170, 170, 290);
+
+      // Neon Sign Illuminations
+      ctx.shadowBlur = 22;
+      ctx.shadowColor = '#ef4444';
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 26px Orbitron';
+      ctx.fillText('STREET BRAWL', 50, 200);
+
+      ctx.shadowColor = '#3b82f6';
+      ctx.fillStyle = '#3b82f6';
+      ctx.fillText('NEON ARENA', 620, 160);
+      ctx.shadowBlur = 0;
+
+      // Ground Texture & Wet Reflection
+      const groundGrad = ctx.createLinearGradient(0, GROUND_Y, 0, CANVAS_HEIGHT);
+      groundGrad.addColorStop(0, '#1a152d');
+      groundGrad.addColorStop(0.3, '#0c0918');
+      groundGrad.addColorStop(1, '#030207');
+      ctx.fillStyle = groundGrad;
+      ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, CANVAS_HEIGHT - GROUND_Y);
+
+      // Ground Dynamic Projectile & Character Reflection Glow
+      projectiles.forEach(proj => {
+        if (!proj.active) return;
+        ctx.fillStyle = proj.color === '#06b6d4' ? 'rgba(6, 182, 212, 0.25)' : 'rgba(56, 189, 248, 0.25)';
+        ctx.beginPath();
+        ctx.ellipse(proj.x, GROUND_Y + 10, proj.radius * 2, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      ctx.strokeStyle = '#383054';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, GROUND_Y);
+      ctx.lineTo(CANVAS_WIDTH, GROUND_Y);
+      ctx.stroke();
+    }
+
+    class ImpactParticle {
+      constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        this.radius = Math.random() * 6 + 2;
+        this.vx = (Math.random() - 0.5) * 16;
+        this.vy = (Math.random() - 0.5) * 16;
+        this.life = 1.0;
+        this.decay = Math.random() * 0.05 + 0.03;
+      }
+      update() {
+        this.x += this.vx * slowMoFactor;
+        this.y += this.vy * slowMoFactor;
+        this.life -= this.decay * slowMoFactor;
+      }
+      draw() {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = this.color;
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    class MotionArc {
+      constructor(x, y, radius, startAngle, endAngle, color) {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.startAngle = startAngle;
+        this.endAngle = endAngle;
+        this.color = color;
+        this.life = 1.0;
+      }
+      update() { this.life -= 0.12 * slowMoFactor; }
+      draw() {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 8;
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, this.startAngle, this.endAngle);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    class DustParticle {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = Math.random() * 8 + 4;
+        this.vx = (Math.random() - 0.5) * 4;
+        this.vy = -Math.random() * 2;
+        this.life = 1.0;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life -= 0.05;
+      }
+      draw() {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.life * 0.4);
+        ctx.fillStyle = '#8b8ba8';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function createHitImpact(x, y, isHeavy = false, color = '#ffea00') {
+      const count = isHeavy ? 35 : 18;
+      for (let i = 0; i < count; i++) {
+        particles.push(new ImpactParticle(x, y, color));
+      }
+      cameraShake = isHeavy ? 18 : 8;
+      hitFreezeFrames = isHeavy ? 5 : 2;
+    }
+
+    function spawnDust(x, y) {
+      for (let i = 0; i < 8; i++) dustClouds.push(new DustParticle(x, y));
+    }
+
+    class Fighter {
+      constructor({ x, y, color, secondaryColor, name, isFacingLeft = false }) {
+        this.position = { x, y };
+        this.velocity = { x: 0, y: 0 };
+        this.width = 65;
+        this.height = 135;
+        this.color = color;
+        this.secondaryColor = secondaryColor;
+        this.name = name;
+        this.isFacingLeft = isFacingLeft;
+
+        this.health = 100;
+        this.superMeter = 0; // EX Gauge
+        this.isGrounded = false;
+        this.isCrouching = false;
+        this.isBlocking = false;
+        this.isStunned = false;
+
+        this.isAttacking = false;
+        this.attackType = null;
+        this.comboCount = 0;
+        this.comboResetTimer = null;
+
+        this.stanceTimer = Math.random() * 10;
+        this.hitbox = { x: 0, y: 0, width: 0, height: 0 };
+
+        // Facial Animation States
+        this.expression = 'NORMAL'; // NORMAL, ATTACK, HURT, WIN
+      }
+
+      reset(x, isFacingLeft) {
+        this.position = { x, y: GROUND_Y - this.height };
+        this.velocity = { x: 0, y: 0 };
+        this.health = 100;
+        this.superMeter = 0;
+        this.isGrounded = true;
+        this.isCrouching = false;
+        this.isBlocking = false;
+        this.isStunned = false;
+        this.isAttacking = false;
+        this.isFacingLeft = isFacingLeft;
+        this.comboCount = 0;
+        this.expression = 'NORMAL';
+      }
+
+      draw(opponent) {
+        ctx.save();
+        
+        this.stanceTimer += 0.08;
+        const breathY = Math.sin(this.stanceTimer) * 2; // Stance recoil
+
+        // Full EX Meter Ambient Glow Aura
+        if (this.superMeter >= 100) {
+          ctx.save();
+          ctx.shadowBlur = 25;
+          ctx.shadowColor = '#eab308';
+          ctx.strokeStyle = 'rgba(234, 179, 8, 0.6)';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.ellipse(this.position.x + this.width / 2, this.position.y + this.height / 2, 40, 70, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Ground Shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.beginPath();
+        ctx.ellipse(
+          this.position.x + this.width / 2, 
+          GROUND_Y + 4, 
+          this.width * 0.75, 9, 0, 0, Math.PI * 2
+        );
+        ctx.fill();
+
+        const dir = this.isFacingLeft ? -1 : 1;
+        const h = this.isCrouching ? this.height * 0.65 : this.height;
+        const baseY = this.isCrouching ? this.position.y + (this.height * 0.35) : this.position.y;
+
+        // Joint Pivots
+        const hip = { x: this.position.x + this.width / 2, y: baseY + h - 45 };
+        const chest = { x: hip.x - (dir * 4), y: hip.y - 38 + breathY };
+        const head = { x: chest.x + (dir * 2), y: chest.y - 24 };
+
+        // Draw Legs
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 11;
+        ctx.lineCap = 'round';
+
+        let kneeLeft = { x: hip.x - 14, y: hip.y + 22 };
+        let footLeft = { x: hip.x - 18, y: GROUND_Y - 2 };
+        let kneeRight = { x: hip.x + 14, y: hip.y + 22 };
+        let footRight = { x: hip.x + 18, y: GROUND_Y - 2 };
+
+        if (this.attackType === 'TATSUMAKI') {
+          kneeLeft = { x: hip.x + (dir * 30), y: hip.y - 10 };
+          footLeft = { x: hip.x + (dir * 70), y: hip.y - 10 };
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(hip.x, hip.y);
+        ctx.lineTo(kneeLeft.x, kneeLeft.y);
+        ctx.lineTo(footLeft.x, footLeft.y);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(hip.x, hip.y);
+        ctx.lineTo(kneeRight.x, kneeRight.y);
+        ctx.lineTo(footRight.x, footRight.y);
+        ctx.stroke();
+
+        // Torso / Gi
+        ctx.fillStyle = this.isStunned ? '#ffffff' : this.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        ctx.moveTo(chest.x - 16, chest.y - 12);
+        ctx.lineTo(chest.x + 16, chest.y - 12);
+        ctx.lineTo(hip.x + 12, hip.y + 8);
+        ctx.lineTo(hip.x - 12, hip.y + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Belt
+        ctx.fillStyle = this.secondaryColor;
+        ctx.fillRect(hip.x - 13, hip.y - 4, 26, 6);
+
+        // DETAILED HEAD & FACE RENDERING (Rosto nos Bonecos)
+        ctx.fillStyle = '#ffdbac'; // Skin tone
+        ctx.beginPath();
+        ctx.arc(head.x, head.y, 15, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Hair / Headband (Ryu/Ken features)
+        if (this.color === '#ef4444') {
+          // Ryu: Spiky Black Hair + Red Headband
+          ctx.fillStyle = '#1c1917';
+          ctx.beginPath();
+          ctx.arc(head.x, head.y - 4, 16, Math.PI * 0.9, Math.PI * 2.1);
+          ctx.fill();
+
+          ctx.strokeStyle = '#dc2626';
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.arc(head.x, head.y - 3, 16, Math.PI * 0.8, Math.PI * 0.2, true);
+          ctx.stroke();
+
+          // Ribbon Trail
+          ctx.beginPath();
+          ctx.moveTo(head.x - (dir * 14), head.y - 2);
+          ctx.lineTo(head.x - (dir * 30), head.y + 8 + breathY);
+          ctx.stroke();
+        } else {
+          // Ken: Blonde Hair
+          ctx.fillStyle = '#facc15';
+          ctx.beginPath();
+          ctx.arc(head.x, head.y - 3, 17, Math.PI * 0.8, Math.PI * 2.2);
+          ctx.fill();
+        }
+
+        // Facial Features (Eyes, Eyebrows, Mouth)
+        const eyeOffsetX = dir * 6;
+        const eyeY = head.y - 2;
+
+        if (this.isStunned) {
+          // Pain Face Expression (X eyes & open wincing mouth)
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(head.x + eyeOffsetX - 3, eyeY - 3); ctx.lineTo(head.x + eyeOffsetX + 3, eyeY + 3);
+          ctx.moveTo(head.x + eyeOffsetX + 3, eyeY - 3); ctx.lineTo(head.x + eyeOffsetX - 3, eyeY + 3);
+          ctx.stroke();
+
+          // Wincing Mouth
+          ctx.fillStyle = '#991b1b';
+          ctx.beginPath();
+          ctx.arc(head.x + eyeOffsetX, head.y + 6, 4, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          // Eye Iris
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(head.x + eyeOffsetX, eyeY, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Pupil tracking opponent
+          ctx.fillStyle = '#0f172a';
+          ctx.beginPath();
+          ctx.arc(head.x + eyeOffsetX + (dir * 1.5), eyeY, 2, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Fierce Eyebrow Angle
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(head.x + eyeOffsetX - 4, eyeY - 5);
+          ctx.lineTo(head.x + eyeOffsetX + 4, eyeY - 3);
+          ctx.stroke();
+
+          // Shouting / Determined Mouth
+          if (this.isAttacking) {
+            ctx.fillStyle = '#7f1d1d';
+            ctx.beginPath();
+            ctx.arc(head.x + eyeOffsetX, head.y + 6, 3.5, 0, Math.PI);
+            ctx.fill();
+          } else {
+            ctx.strokeStyle = '#7f1d1d';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(head.x + eyeOffsetX - 3, head.y + 6);
+            ctx.lineTo(head.x + eyeOffsetX + 3, head.y + 6);
+            ctx.stroke();
+          }
+        }
+
+        // Arms & Strike Animations
+        const shoulder = { x: chest.x + (dir * 6), y: chest.y - 8 };
+        let handFront = { x: shoulder.x + (dir * 22), y: shoulder.y + 10 };
+        let handBack = { x: shoulder.x - (dir * 10), y: shoulder.y + 12 };
+
+        if (this.isAttacking) {
+          const reach = dir * (this.attackType === 'EX' ? 120 : this.attackType === 'SHORYUKEN' ? 90 : 75);
+
+          if (this.attackType === 'JAB' || this.attackType === 'HADOKEN') {
+            handFront = { x: shoulder.x + reach, y: shoulder.y - 2 };
+          } else if (this.attackType === 'HEAVY' || this.attackType === 'SHORYUKEN') {
+            handFront = { x: shoulder.x + reach, y: shoulder.y - 45 }; // High Dragon Uppercut
+          } else if (this.attackType === 'KICK' || this.attackType === 'SWEEP') {
+            ctx.strokeStyle = '#ffdbac';
+            ctx.lineWidth = 12;
+            ctx.beginPath();
+            ctx.moveTo(hip.x, hip.y);
+            const kickY = this.attackType === 'SWEEP' ? GROUND_Y - 10 : hip.y - 30;
+            ctx.lineTo(hip.x + (dir * 90), kickY);
+            ctx.stroke();
+          }
+        } else if (this.isBlocking) {
+          handFront = { x: shoulder.x + (dir * 12), y: head.y };
+          handBack = { x: shoulder.x + (dir * 8), y: head.y + 10 };
+
+          ctx.strokeStyle = '#60a5fa';
+          ctx.lineWidth = 6;
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = '#60a5fa';
+          ctx.beginPath();
+          ctx.arc(shoulder.x + (dir * 20), chest.y, 34, -Math.PI/2, Math.PI/2, this.isFacingLeft);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+
+        // Arms
+        ctx.strokeStyle = '#ffdbac';
+        ctx.lineWidth = 9;
+        ctx.beginPath();
+        ctx.moveTo(shoulder.x - (dir * 4), shoulder.y);
+        ctx.lineTo(handBack.x, handBack.y);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(shoulder.x, shoulder.y);
+        ctx.lineTo(handFront.x, handFront.y);
+        ctx.stroke();
+
+        // Gloves
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(handFront.x, handFront.y, 7, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+
+      update(opponent) {
+        this.isFacingLeft = this.position.x > opponent.position.x;
+
+        this.position.x += this.velocity.x * slowMoFactor;
+        this.position.y += this.velocity.y * slowMoFactor;
+
+        // Ground Physics & Jump Parabola
+        if (this.position.y + this.height + this.velocity.y >= GROUND_Y) {
+          if (!this.isGrounded) spawnDust(this.position.x + this.width / 2, GROUND_Y);
+          this.velocity.y = 0;
+          this.position.y = GROUND_Y - this.height;
+          this.isGrounded = true;
+        } else {
+          this.velocity.y += GRAVITY * slowMoFactor;
+          this.isGrounded = false;
+        }
+
+        // Arena Wall Splat Physics
+        if (this.position.x < 0) {
+          if (this.velocity.x < -8) {
+            createHitImpact(10, this.position.y + 50, true, '#ffffff');
+            this.velocity.x = 6; // Wall Rebound Bounce
+          }
+          this.position.x = 0;
+        }
+        if (this.position.x + this.width > CANVAS_WIDTH) {
+          if (this.velocity.x > 8) {
+            createHitImpact(CANVAS_WIDTH - 10, this.position.y + 50, true, '#ffffff');
+            this.velocity.x = -6; // Wall Rebound Bounce
+          }
+          this.position.x = CANVAS_WIDTH - this.width;
+        }
+
+        this.draw(opponent);
+      }
+
+      attack(type) {
+        if (this.isAttacking || this.isStunned || this.isBlocking) return;
+
+        if (type === 'EX') {
+          if (this.superMeter < 100) return;
+          this.superMeter = 0;
+          speedLinesAlpha = 1.0;
+          showSpecialNotice("EX ULTRA SUPER!");
+        } else if (type === 'HADOKEN') {
+          showSpecialNotice("HADOKEN!");
+        } else if (type === 'SHORYUKEN') {
+          showSpecialNotice("SHORYUKEN!");
+          this.velocity.y = -18; // High Dragon Launch
+          this.velocity.x = this.isFacingLeft ? -6 : 6;
+        } else if (type === 'TATSUMAKI') {
+          showSpecialNotice("TATSUMAKI!");
+          this.velocity.x = this.isFacingLeft ? -14 : 14;
+        }
+
+        initAudio();
+        this.isAttacking = true;
+        this.attackType = type;
+
+        let range = 75;
+        let damage = 8;
+        let arcRadius = 40;
+
+        if (type === 'JAB') {
+          range = 75; damage = 7; arcRadius = 35;
+        } else if (type === 'HEAVY') {
+          range = 95; damage = 17; arcRadius = 55;
+          this.velocity.x += this.isFacingLeft ? -4 : 4;
+        } else if (type === 'KICK') {
+          range = 100; damage = 13; arcRadius = 60;
+        } else if (type === 'HADOKEN') {
+          range = 0; // Handled by Projectile
+          const spawnX = this.isFacingLeft ? this.position.x - 20 : this.position.x + this.width + 20;
+          projectiles.push(new Projectile(spawnX, this.position.y + 35, this.isFacingLeft ? -1 : 1, this));
+        } else if (type === 'SHORYUKEN') {
+          range = 90; damage = 22; arcRadius = 70;
+        } else if (type === 'TATSUMAKI') {
+          range = 110; damage = 18; arcRadius = 80;
+        } else if (type === 'EX') {
+          range = 130; damage = 35; arcRadius = 90;
+          this.velocity.x += this.isFacingLeft ? -10 : 10;
+        }
+
+        playSound(type);
+
+        const dir = this.isFacingLeft ? -1 : 1;
+        const hitX = this.isFacingLeft ? this.position.x - range : this.position.x + this.width;
+        
+        if (type !== 'HADOKEN') {
+          this.hitbox = {
+            x: hitX,
+            y: type === 'SWEEP' ? GROUND_Y - 30 : this.position.y + 10,
+            width: range,
+            height: type === 'SWEEP' ? 30 : 80,
+            damage: damage,
+            type: type
+          };
+
+          motionArcs.push(new MotionArc(
+            this.position.x + this.width/2 + (dir * 40), 
+            this.position.y + 40, 
+            arcRadius, 
+            -Math.PI/3, Math.PI/3, 
+            type === 'EX' ? '#eab308' : type === 'SHORYUKEN' ? '#f97316' : this.color
+          ));
+        }
+
+        const duration = type === 'JAB' ? 150 : type === 'HADOKEN' ? 300 : type === 'SHORYUKEN' ? 450 : 320;
+        setTimeout(() => { this.isAttacking = false; }, duration);
+      }
+
+      takeDamage(damage, isHeavy = false, isCounter = false) {
+        if (this.isBlocking) {
+          damage *= 0.15;
+          playSound('BLOCK');
+          createHitImpact(this.position.x + this.width/2, this.position.y + 40, false, '#60a5fa');
+        } else {
+          this.isStunned = true;
+
+          if (isCounter) {
+            damage *= 1.4;
+            showSpecialNotice("COUNTER HIT!");
+          }
+
+          const knockDir = this.isFacingLeft ? 1 : -1;
+          this.velocity.x = knockDir * (isHeavy ? 16 : 7);
+          this.velocity.y = isHeavy ? -8 : -2; // Air Juggle launch
+
+          this.superMeter = Math.min(100, this.superMeter + 15);
+
+          setTimeout(() => { this.isStunned = false; }, isHeavy ? 380 : 180);
+        }
+
+        this.health = Math.max(0, this.health - damage);
+      }
+
+      registerHit() {
+        this.comboCount++;
+        this.superMeter = Math.min(100, this.superMeter + 12);
+        clearTimeout(this.comboResetTimer);
+        this.comboResetTimer = setTimeout(() => { this.comboCount = 0; }, 1200);
+      }
+    }
+
+    function showSpecialNotice(text) {
+      counterNotice.innerText = text;
+      counterNotice.classList.remove('hidden');
+      counterNotice.classList.add('counter-flash');
+      setTimeout(() => {
+        counterNotice.classList.add('hidden');
+        counterNotice.classList.remove('counter-flash');
+      }, 600);
+    }
+
+    const player1 = new Fighter({ x: 180, y: GROUND_Y - 135, color: '#ef4444', secondaryColor: '#fbbf24', name: 'Ryu', isFacingLeft: false });
+    const player2 = new Fighter({ x: 760, y: GROUND_Y - 135, color: '#3b82f6', secondaryColor: '#38bdf8', name: 'Ken', isFacingLeft: true });
+
+    const keys = {};
+
+    window.addEventListener('keydown', e => {
+      keys[e.code] = true;
+
+      if (e.code === 'Escape' || e.code === 'KeyP') {
+        if (gameState === 'PLAYING') pauseGame();
+        else if (gameState === 'PAUSED') resumeGame();
+      }
+
+      if (gameState !== 'PLAYING') return;
+
+      const p1Controlled = (!isOnline || isHost) ? player1 : player2;
+
+      // Special Move Hotkeys P1 / Host
+      if (e.code === 'KeyQ') p1Controlled.attack('HADOKEN');
+      if (e.code === 'KeyE') p1Controlled.attack('SHORYUKEN');
+      if (e.code === 'KeyR') p1Controlled.attack('TATSUMAKI');
+      if (e.code === 'KeyF') p1Controlled.attack('EX');
+      if (e.code === 'Space') p1Controlled.attack('KICK');
+
+      // Special Move Hotkeys P2 Local Mode
+      if (!isOnline) {
+        if (e.code === 'KeyU' || e.code === 'Numpad1') player2.attack('HADOKEN');
+        if (e.code === 'KeyI' || e.code === 'Numpad2') player2.attack('SHORYUKEN');
+        if (e.code === 'KeyO' || e.code === 'Numpad3') player2.attack('TATSUMAKI');
+        if (e.code === 'KeyP' || e.code === 'Numpad4') player2.attack('EX');
+        if (e.code === 'KeyL') player2.attack('JAB');
+        if (e.code === 'KeyK') player2.attack('HEAVY');
+        if (e.code === 'KeyJ') player2.attack('KICK');
+      }
+    });
+
+    window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+    // Mouse Attack Controls
+    window.addEventListener('mousedown', e => {
+      if (gameState !== 'PLAYING') return;
+
+      const activePlayer = (!isOnline || isHost) ? player1 : player2;
+
+      if (e.shiftKey) {
+        activePlayer.attack('EX');
+      } else if (e.button === 0) {
+        activePlayer.attack('JAB');
+      } else if (e.button === 2) {
+        activePlayer.attack('HEAVY');
+      } else if (e.button === 1) {
+        activePlayer.attack('KICK');
+      }
+    });
+
+    function initOnlineHost() {
+      const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
+      document.getElementById('display-room-code').innerText = roomCode;
+      document.getElementById('host-code-box').classList.remove('hidden');
+
+      peer = new Peer('SB-' + roomCode);
+
+      peer.on('open', () => {
+        document.getElementById('host-status').innerText = 'Aguardando amigo se conectar...';
+      });
+
+      peer.on('connection', conn => {
+        peerConn = conn;
+        setupConnection();
+        document.getElementById('host-status').innerText = 'Conectado! Iniciando jogo...';
+        setTimeout(() => { startOnlineGame(true); }, 1000);
+      });
+
+      peer.on('error', () => {
+        document.getElementById('host-status').innerText = 'Erro na conexão. Tente gerar outro código.';
+      });
+    }
+
+    function joinOnlineRoom() {
+      const code = document.getElementById('input-room-code').value.trim();
+      const statusEl = document.getElementById('join-status');
+
+      if (code.length < 4) {
+        statusEl.innerText = 'Digite o código de 4 dígitos!';
+        return;
+      }
+
+      statusEl.innerText = 'Conectando ao amigo...';
+      peer = new Peer();
+
+      peer.on('open', () => {
+        peerConn = peer.connect('SB-' + code);
+        
+        peerConn.on('open', () => {
+          statusEl.innerText = 'Conectado! Entrando na partida...';
+          setupConnection();
+          setTimeout(() => { startOnlineGame(false); }, 1000);
+        });
+
+        peerConn.on('error', () => {
+          statusEl.innerText = 'Código inválido ou sala não encontrada!';
+        });
+      });
+    }
+
+    function setupConnection() {
+      peerConn.on('data', data => {
+        if (data.type === 'SYNC') {
+          if (isHost) {
+            player2.position = data.p2Pos;
+            player2.velocity = data.p2Vel;
+            player2.isCrouching = data.p2Crouch;
+            player2.isBlocking = data.p2Block;
+            if (data.attack) player2.attack(data.attack);
+          } else {
+            player1.position = data.p1Pos;
+            player1.velocity = data.p1Vel;
+            player1.health = data.p1Health;
+            player1.superMeter = data.p1Super;
+            player1.isCrouching = data.p1Crouch;
+            player1.isBlocking = data.p1Block;
+            if (data.p1Attack) player1.attack(data.p1Attack);
+
+            player2.position = data.p2Pos;
+            player2.velocity = data.p2Vel;
+            player2.health = data.p2Health;
+            player2.superMeter = data.p2Super;
+            if (data.p2Attack) player2.attack(data.p2Attack);
+
+            timer = data.timer;
+            gameTimerEl.innerText = timer;
+          }
+        }
+      });
+    }
+
+    function sendNetworkUpdate() {
+      if (!peerConn || !peerConn.open) return;
+
+      if (isHost) {
+        peerConn.send({
+          type: 'SYNC',
+          p1Pos: player1.position, p1Vel: player1.velocity, p1Health: player1.health, p1Super: player1.superMeter, p1Crouch: player1.isCrouching, p1Block: player1.isBlocking, p1Attack: player1.isAttacking ? player1.attackType : null,
+          p2Pos: player2.position, p2Vel: player2.velocity, p2Health: player2.health, p2Super: player2.superMeter, p2Attack: player2.isAttacking ? player2.attackType : null,
+          timer: timer
+        });
+      } else {
+        peerConn.send({
+          type: 'SYNC',
+          p2Pos: player2.position, p2Vel: player2.velocity, p2Crouch: player2.isCrouching, p2Block: player2.isBlocking, attack: player2.isAttacking ? player2.attackType : null
+        });
+      }
+    }
+
+    function checkHit(attacker, defender) {
+      if (!attacker.isAttacking || attacker.attackType === 'HADOKEN') return;
+
+      const hb = attacker.hitbox;
+      const defX = defender.position.x;
+      const defY = defender.position.y;
+      const defW = defender.width;
+      const defH = defender.height;
+
+      if (
+        hb.x < defX + defW &&
+        hb.x + hb.width > defX &&
+        hb.y < defY + defH &&
+        hb.y + hb.height > defY
+      ) {
+        attacker.isAttacking = false;
+        const isHeavy = hb.type === 'HEAVY' || hb.type === 'EX' || hb.type === 'SHORYUKEN';
+        const isCounter = defender.isAttacking;
+
+        defender.takeDamage(hb.damage, isHeavy, isCounter);
+        attacker.registerHit();
+
+        const hitX = attacker.isFacingLeft ? hb.x : hb.x + hb.width;
+        createHitImpact(hitX, hb.y + 20, isHeavy, hb.type === 'EX' ? '#eab308' : attacker.color);
+      }
+    }
+
+    function processMovement() {
+      if (gameState !== 'PLAYING') return;
+
+      if (isOnline) {
+        const myPlayer = isHost ? player1 : player2;
+        if (!myPlayer.isStunned) {
+          myPlayer.velocity.x = 0;
+          myPlayer.isCrouching = keys['KeyS'];
+          myPlayer.isBlocking = keys['KeyS'];
+
+          if (!myPlayer.isCrouching) {
+            if (keys['KeyA']) myPlayer.velocity.x = -6;
+            if (keys['KeyD']) myPlayer.velocity.x = 6;
+            if (keys['KeyW'] && myPlayer.isGrounded) myPlayer.velocity.y = -17;
+          }
+        }
+      } else {
+        // Player 1 Local
+        if (!player1.isStunned) {
+          player1.velocity.x = 0;
+          player1.isCrouching = keys['KeyS'];
+          player1.isBlocking = keys['KeyS'];
+
+          if (!player1.isCrouching) {
+            if (keys['KeyA']) player1.velocity.x = -6;
+            if (keys['KeyD']) player1.velocity.x = 6;
+            if (keys['KeyW'] && player1.isGrounded) player1.velocity.y = -17;
+          }
+        }
+
+        // Player 2 Local
+        if (!player2.isStunned) {
+          player2.velocity.x = 0;
+          player2.isCrouching = keys['ArrowDown'];
+          player2.isBlocking = keys['ArrowDown'];
+
+          if (!player2.isCrouching) {
+            if (keys['ArrowLeft']) player2.velocity.x = -6;
+            if (keys['ArrowRight']) player2.velocity.x = -6;
+            if (keys['ArrowUp'] && player2.isGrounded) player2.velocity.y = -17;
+          }
+        }
+      }
+    }
+
+    function updateHUD() {
+      p1HealthBar.style.width = player1.health + '%';
+      p2HealthBar.style.width = player2.health + '%';
+
+      p1SuperBar.style.width = player1.superMeter + '%';
+      p2SuperBar.style.width = player2.superMeter + '%';
+
+      if (player1.comboCount > 1) {
+        p1ComboText.innerText = `${player1.comboCount} HITS!`;
+        p1ComboText.style.opacity = '1';
+      } else { p1ComboText.style.opacity = '0'; }
+
+      if (player2.comboCount > 1) {
+        p2ComboText.innerText = `${player2.comboCount} HITS!`;
+        p2ComboText.style.opacity = '1';
+      } else { p2ComboText.style.opacity = '0'; }
+    }
+
+    function gameLoop() {
+      ctx.save();
+
+      if (hitFreezeFrames > 0) {
+        hitFreezeFrames--;
+        requestAnimationFrame(gameLoop);
+        return;
+      }
+
+      if (cameraShake > 0) {
+        const shakeX = (Math.random() - 0.5) * cameraShake;
+        const shakeY = (Math.random() - 0.5) * cameraShake;
+        ctx.translate(shakeX, shakeY);
+        cameraShake *= 0.85;
+        if (cameraShake < 0.5) cameraShake = 0;
+      }
+
+      drawArena();
+
+      // Manga Speed Lines FX
+      if (speedLinesAlpha > 0) {
+        ctx.save();
+        ctx.globalAlpha = speedLinesAlpha;
+        ctx.strokeStyle = '#eab308';
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 20; i++) {
+          const angle = (Math.PI * 2 / 20) * i;
+          ctx.beginPath();
+          ctx.moveTo(CANVAS_WIDTH/2, CANVAS_HEIGHT/2);
+          ctx.lineTo(CANVAS_WIDTH/2 + Math.cos(angle) * 800, CANVAS_HEIGHT/2 + Math.sin(angle) * 800);
+          ctx.stroke();
+        }
+        ctx.restore();
+        speedLinesAlpha -= 0.05;
+      }
+
+      rainParticles.forEach(p => { p.update(); p.draw(); });
+
+      dustClouds = dustClouds.filter(d => d.life > 0);
+      dustClouds.forEach(d => { d.update(); d.draw(); });
+
+      projectiles = projectiles.filter(p => p.active);
+      projectiles.forEach(p => { p.update(p.owner === player1 ? player2 : player1); p.draw(); });
+
+      if (gameState === 'PLAYING') {
+        processMovement();
+
+        player1.update(player2);
+        player2.update(player1);
+
+        if (!isOnline || isHost) {
+          checkHit(player1, player2);
+          checkHit(player2, player1);
+        }
+
+        if (isOnline) sendNetworkUpdate();
+
+        updateHUD();
+        checkGameOver();
+      } else {
+        player1.draw(player2);
+        player2.draw(player1);
+      }
+
+      motionArcs = motionArcs.filter(a => a.life > 0);
+      motionArcs.forEach(a => { a.update(); a.draw(); });
+
+      particles = particles.filter(p => p.life > 0);
+      particles.forEach(p => { p.update(); p.draw(); });
+
+      ctx.restore();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function startLocalGame() {
+      isOnline = false;
+      isHost = true;
+      networkBadge.innerText = "OFFLINE LOCAL";
+      networkBadge.className = "text-[10px] text-emerald-400 mt-1 uppercase tracking-widest font-semibold bg-gray-900/80 px-2 py-0.5 rounded border border-emerald-500/30";
+      
+      p1Label.innerText = "P1: RYU";
+      p2Label.innerText = "P2: KEN";
+
+      startGame();
+    }
+
+    function startOnlineGame(host) {
+      isOnline = true;
+      isHost = host;
+
+      networkBadge.innerText = "ONLINE P2P";
+      networkBadge.className = "text-[10px] text-blue-400 mt-1 uppercase tracking-widest font-semibold bg-gray-900/80 px-2 py-0.5 rounded border border-blue-500/30 animate-pulse";
+
+      if (isHost) {
+        p1Label.innerText = "VOCÊ (RYU)";
+        p2Label.innerText = "AMIGO (KEN)";
+      } else {
+        p1Label.innerText = "AMIGO (RYU)";
+        p2Label.innerText = "VOCÊ (KEN)";
+      }
+
+      startGame();
+    }
+
+    function startGame() {
+      resetGame();
+      gameState = 'PLAYING';
+      slowMoFactor = 1.0;
+      
+      menuMain.classList.add('hidden');
+      menuOnline.classList.add('hidden');
+      menuControls.classList.add('hidden');
+      menuPause.classList.add('hidden');
+      menuGameOver.classList.add('hidden');
+      hud.classList.remove('hidden');
+
+      if (!isOnline || isHost) startTimer();
+    }
+
+    function resetGame() {
+      player1.reset(180, false);
+      player2.reset(760, true);
+      projectiles = [];
+      timer = 99;
+      gameTimerEl.innerText = timer;
+      clearInterval(timerInterval);
+    }
+
+    function startTimer() {
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (gameState === 'PLAYING') {
+          timer--;
+          gameTimerEl.innerText = timer;
+          if (timer <= 0) triggerGameOver(true);
+        }
+      }, 1000);
+    }
+
+    function pauseGame() {
+      if (isOnline) return;
+      gameState = 'PAUSED';
+      menuPause.classList.remove('hidden');
+    }
+
+    function resumeGame() {
+      gameState = 'PLAYING';
+      menuPause.classList.add('hidden');
+    }
+
+    function checkGameOver() {
+      if (player1.health <= 0 || player2.health <= 0) {
+        triggerGameOver(false);
+      }
+    }
+
+    function triggerGameOver(isTimeOut) {
+      slowMoFactor = 0.25;
+      setTimeout(() => {
+        gameState = 'GAMEOVER';
+        clearInterval(timerInterval);
+        menuGameOver.classList.remove('hidden');
+
+        if (isTimeOut) {
+          if (player1.health === player2.health) winnerTitle.innerText = "EMPATE TÉCNICO!";
+          else if (player1.health > player2.health) winnerTitle.innerText = "JOGADOR 1 VENCEU!";
+          else winnerTitle.innerText = "JOGADOR 2 VENCEU!";
+        } else {
+          if (player1.health > 0) winnerTitle.innerText = "JOGADOR 1 VENCEU!";
+          else winnerTitle.innerText = "JOGADOR 2 VENCEU!";
+        }
+      }, 700);
+    }
+
+    function showMainMenu() {
+      gameState = 'MENU';
+      clearInterval(timerInterval);
+
+      hud.classList.add('hidden');
+      menuOnline.classList.add('hidden');
+      menuControls.classList.add('hidden');
+      menuPause.classList.add('hidden');
+      menuGameOver.classList.add('hidden');
+      menuMain.classList.remove('hidden');
+    }
+
+    // Button Event Listeners
+    document.getElementById('btn-local').addEventListener('click', startLocalGame);
+    document.getElementById('btn-online-menu').addEventListener('click', () => {
+      menuMain.classList.add('hidden');
+      menuOnline.classList.remove('hidden');
+    });
+
+    document.getElementById('btn-host-create').addEventListener('click', initOnlineHost);
+    document.getElementById('btn-join-room').addEventListener('click', joinOnlineRoom);
+
+    document.getElementById('btn-controls').addEventListener('click', () => {
+      menuMain.classList.add('hidden');
+      menuControls.classList.remove('hidden');
+    });
+    
+    document.getElementById('btn-back-online').addEventListener('click', () => {
+      menuOnline.classList.add('hidden');
+      menuMain.classList.remove('hidden');
+    });
+
+    document.getElementById('btn-back-controls').addEventListener('click', () => {
+      menuControls.classList.add('hidden');
+      menuMain.classList.remove('hidden');
+    });
+
+    document.getElementById('btn-resume').addEventListener('click', resumeGame);
+    document.getElementById('btn-restart-pause').addEventListener('click', startGame);
+    document.getElementById('btn-main-pause').addEventListener('click', showMainMenu);
+
+    document.getElementById('btn-restart-over').addEventListener('click', startGame);
+    document.getElementById('btn-main-over').addEventListener('click', showMainMenu);
+
+    // Launch Loop
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
